@@ -3,14 +3,18 @@
 // Gemini API. Uses the free AI Studio tier (no credit card needed) and the
 // model's own knowledge — no live web search. Visitors need no account.
 
-// You can change this to any model available on your free tier. Find current
-// names at https://aistudio.google.com (look for "Flash" / "Flash-Lite").
-// Tip: "gemini-2.5-flash-lite" usually allows more requests per minute.
-const MODEL = "gemini-2.5-flash";
+// Tries each model in order. If one is rate-limited (429) or temporarily
+// overloaded (503), it retries briefly, then falls back to the next model.
+// Each model has its own separate free quota, so the fallback helps a lot.
+// Find current free-tier model names at https://aistudio.google.com.
+const MODELS = ["gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-2.0-flash"];
+
+// Status codes worth retrying (transient): rate limit + server overload.
+const TRANSIENT = new Set([429, 500, 502, 503, 504]);
 
 const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
 
-// Pull the suggested wait (in seconds) out of a Gemini 429 error, if present.
+// Pull the suggested wait (seconds) out of a Gemini 429 error, if present.
 function retrySeconds(data) {
   try {
     const details = (data && data.error && data.error.details) || [];
@@ -71,63 +75,72 @@ export default async function handler(req, res) {
       responseMimeType: "application/json", // ask Gemini for clean JSON
     },
   });
-  const url =
-    "https://generativelanguage.googleapis.com/v1beta/models/" + MODEL + ":generateContent";
 
-  try {
-    let r, rawBody, data;
-    // Up to 2 attempts: if we hit a short rate-limit blip, wait and retry once.
-    for (let attempt = 0; attempt < 2; attempt++) {
-      r = await fetch(url, {
+  async function attempt(model) {
+    const r = await fetch(
+      "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent",
+      {
         method: "POST",
         headers: { "content-type": "application/json", "x-goog-api-key": apiKey },
         body: payload,
-      });
-      rawBody = await r.text();
-      data = null;
-      try { data = JSON.parse(rawBody); } catch { /* non-JSON */ }
-
-      if (r.status !== 429) break;
-
-      // Rate limited. Retry once only if the suggested wait is short.
-      const wait = retrySeconds(data);
-      if (attempt === 0 && wait != null && wait <= 6) {
-        await sleep(wait * 1000 + 300);
-        continue;
       }
-      break;
+    );
+    const rawBody = await r.text();
+    let data = null;
+    try { data = JSON.parse(rawBody); } catch { /* non-JSON */ }
+    return { status: r.status, ok: r.ok, data, rawBody };
+  }
+
+  try {
+    let last = null;
+
+    // Try each model; within a model, retry transient errors a couple times.
+    for (let mi = 0; mi < MODELS.length; mi++) {
+      const model = MODELS[mi];
+      for (let a = 0; a < 2; a++) {
+        last = await attempt(model);
+
+        if (last.ok) {
+          const cand = last.data && last.data.candidates && last.data.candidates[0];
+          const parts = (cand && cand.content && cand.content.parts) || [];
+          const text = parts.map((p) => p.text || "").join("");
+          if (text) {
+            res.status(200).json({ text });
+            return;
+          }
+          // Empty (e.g. safety block): try next model rather than retrying same.
+          break;
+        }
+
+        if (!TRANSIENT.has(last.status)) break; // non-retryable (e.g. 400)
+
+        // Transient: wait briefly, then retry. Keep waits short to fit time budget.
+        const suggested = last.status === 429 ? retrySeconds(last.data) : null;
+        const wait = suggested != null ? Math.min(suggested, 5) : a === 0 ? 1 : 2;
+        const isLastTry = mi === MODELS.length - 1 && a === 1;
+        if (!isLastTry) await sleep(wait * 1000 + 200);
+      }
     }
 
-    if (!r.ok) {
+    // Everything failed — return a clear, friendly message.
+    const status = (last && last.status) || 500;
+    let friendly;
+    if (status === 429) {
+      friendly =
+        "Busy: the free Gemini tier's quota is momentarily used up across all available models. " +
+        "Wait 30–60 seconds and try again.";
+    } else if (TRANSIENT.has(status)) {
+      friendly =
+        "Google's free Gemini servers are briefly overloaded right now (this is temporary and affects everyone). " +
+        "Please try again in a few seconds.";
+    } else {
       const detail =
-        (data && data.error && data.error.message) ||
-        (rawBody ? rawBody.slice(0, 300) : "") ||
-        ("HTTP " + r.status);
-      let friendly;
-      if (r.status === 429) {
-        const wait = retrySeconds(data);
-        friendly =
-          "Busy: the free Gemini tier limits how many requests you can make per minute/day. " +
-          (wait != null
-            ? "Try again in about " + wait + " seconds."
-            : "Wait up to a minute and try again.");
-      } else {
-        friendly = "Gemini error (" + r.status + "): " + detail;
-      }
-      res.status(r.status).json({ error: friendly });
-      return;
+        (last && last.data && last.data.error && last.data.error.message) ||
+        (last && last.rawBody ? last.rawBody.slice(0, 300) : "") ||
+        ("HTTP " + status);
+      friendly = "Gemini error (" + status + "): " + detail;
     }
-
-    const cand = data && data.candidates && data.candidates[0];
-    const parts = (cand && cand.content && cand.content.parts) || [];
-    const text = parts.map((p) => p.text || "").join("");
-
-    if (!text) {
-      res.status(502).json({ error: "Gemini returned an empty response. Try again." });
-      return;
-    }
-
-    res.status(200).json({ text });
+    res.status(status).json({ error: friendly });
   } catch (e) {
     res.status(500).json({ error: e.message || "The request failed." });
   }
