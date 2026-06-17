@@ -32,13 +32,27 @@ export default async function handler(req, res) {
   }
 
   try {
+    const today = new Date().toLocaleDateString("en-US", {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+    });
+    const datedSystem =
+      "Today's date is " +
+      today +
+      ". Treat every request as historical research about events that have already happened. " +
+      "Never refuse a year, flight, or event on the grounds that it is in the future or has not occurred yet — " +
+      "the current year and recent years are in the past. If you have knowledge of matching accidents, report them. " +
+      "If you genuinely have no reliable information about the request, say so plainly instead.\n\n" +
+      system;
+
     const r = await fetch(
       "https://generativelanguage.googleapis.com/v1beta/models/" + MODEL + ":generateContent",
       {
         method: "POST",
         headers: { "content-type": "application/json", "x-goog-api-key": apiKey },
         body: JSON.stringify({
-          system_instruction: { parts: [{ text: system }] },
+          system_instruction: { parts: [{ text: datedSystem }] },
           contents: [{ role: "user", parts: [{ text: prompt }] }],
           generationConfig: {
             maxOutputTokens: 2048,
