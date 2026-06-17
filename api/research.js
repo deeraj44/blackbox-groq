@@ -36,7 +36,7 @@ export default async function handler(req, res) {
       },
       body: JSON.stringify({
         model: "groq/compound-mini",
-        max_tokens: 2048,
+        max_tokens: 1500,
         temperature: 0.4,
         messages: [
           { role: "system", content: system },
@@ -57,7 +57,17 @@ export default async function handler(req, res) {
         (data && data.error && data.error.message) ||
         (rawBody ? rawBody.slice(0, 300) : "") ||
         ("HTTP " + r.status);
-      res.status(r.status).json({ error: "Groq error (" + r.status + "): " + detail });
+      let friendly;
+      if (r.status === 429) {
+        friendly =
+          "Busy: the free Groq tier allows only ~8,000 tokens per minute, shared across everyone using this app, and it's maxed out right now. Wait about 15 seconds and try again.";
+      } else if (r.status === 413) {
+        friendly =
+          "That query pulled too much web data for the free Groq tier to process in one request. Try a more specific or older flight — or raise Groq's limits (see README).";
+      } else {
+        friendly = "Groq error (" + r.status + "): " + detail;
+      }
+      res.status(r.status).json({ error: friendly });
       return;
     }
 
