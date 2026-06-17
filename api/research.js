@@ -36,7 +36,7 @@ export default async function handler(req, res) {
       },
       body: JSON.stringify({
         model: "groq/compound",
-        max_tokens: 8000,
+        max_tokens: 2048,
         temperature: 0.4,
         messages: [
           { role: "system", content: system },
