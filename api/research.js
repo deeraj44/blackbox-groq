@@ -1,7 +1,11 @@
 // Backend function. Runs on the server, never in the visitor's browser.
-// It holds your secret Groq API key and forwards each request to Groq's
-// OpenAI-compatible endpoint, using the "groq/compound" system which has
-// built-in web search. Visitors never see the key and need no account.
+// Holds your secret Google Gemini API key and forwards each request to the
+// Gemini API. Uses the free AI Studio tier (no credit card needed) and the
+// model's own knowledge — no live web search. Visitors need no account.
+
+// You can change this to any model available on your free tier. Find current
+// names at https://aistudio.google.com (look for "Flash" / "Flash-Lite").
+const MODEL = "gemini-2.5-flash";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
@@ -9,10 +13,10 @@ export default async function handler(req, res) {
     return;
   }
 
-  const apiKey = process.env.GROQ_API_KEY;
+  const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
     res.status(500).json({
-      error: "The server has no GROQ_API_KEY set. Add it in your hosting dashboard.",
+      error: "The server has no GEMINI_API_KEY set. Add it in your hosting dashboard.",
     });
     return;
   }
@@ -28,26 +32,23 @@ export default async function handler(req, res) {
   }
 
   try {
-    const r = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        authorization: "Bearer " + apiKey,
-      },
-      body: JSON.stringify({
-        model: "groq/compound-mini",
-        max_tokens: 1500,
-        temperature: 0.4,
-        messages: [
-          { role: "system", content: system },
-          { role: "user", content: prompt },
-        ],
-        // Turn on Groq's built-in live web search (single search per request).
-        compound_custom: { tools: { enabled_tools: ["web_search"] } },
-      }),
-    });
+    const r = await fetch(
+      "https://generativelanguage.googleapis.com/v1beta/models/" + MODEL + ":generateContent",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-goog-api-key": apiKey },
+        body: JSON.stringify({
+          system_instruction: { parts: [{ text: system }] },
+          contents: [{ role: "user", parts: [{ text: prompt }] }],
+          generationConfig: {
+            maxOutputTokens: 2048,
+            temperature: 0.4,
+            responseMimeType: "application/json", // ask Gemini for clean JSON
+          },
+        }),
+      }
+    );
 
-    // Read as text first so we can report Groq's real error if parsing fails.
     const rawBody = await r.text();
     let data = null;
     try { data = JSON.parse(rawBody); } catch { /* non-JSON error body */ }
@@ -60,24 +61,22 @@ export default async function handler(req, res) {
       let friendly;
       if (r.status === 429) {
         friendly =
-          "Busy: the free Groq tier allows only ~8,000 tokens per minute, shared across everyone using this app, and it's maxed out right now. Wait about 15 seconds and try again.";
-      } else if (r.status === 413) {
-        friendly =
-          "That query pulled too much web data for the free Groq tier to process in one request. Try a more specific or older flight — or raise Groq's limits (see README).";
+          "Busy: the free Gemini tier limits requests per minute/day, and it's maxed out right now. Wait a bit and try again.";
       } else {
-        friendly = "Groq error (" + r.status + "): " + detail;
+        friendly = "Gemini error (" + r.status + "): " + detail;
       }
       res.status(r.status).json({ error: friendly });
       return;
     }
 
-    const text =
-      (data &&
-        data.choices &&
-        data.choices[0] &&
-        data.choices[0].message &&
-        data.choices[0].message.content) ||
-      "";
+    const cand = data && data.candidates && data.candidates[0];
+    const parts = (cand && cand.content && cand.content.parts) || [];
+    const text = parts.map((p) => p.text || "").join("");
+
+    if (!text) {
+      res.status(502).json({ error: "Gemini returned an empty response. Try again." });
+      return;
+    }
 
     res.status(200).json({ text });
   } catch (e) {
