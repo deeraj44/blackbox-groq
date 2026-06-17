@@ -5,7 +5,24 @@
 
 // You can change this to any model available on your free tier. Find current
 // names at https://aistudio.google.com (look for "Flash" / "Flash-Lite").
+// Tip: "gemini-2.5-flash-lite" usually allows more requests per minute.
 const MODEL = "gemini-2.5-flash";
+
+const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
+
+// Pull the suggested wait (in seconds) out of a Gemini 429 error, if present.
+function retrySeconds(data) {
+  try {
+    const details = (data && data.error && data.error.details) || [];
+    for (const d of details) {
+      if (d && typeof d.retryDelay === "string") {
+        const m = d.retryDelay.match(/(\d+(\.\d+)?)/);
+        if (m) return Math.ceil(parseFloat(m[1]));
+      }
+    }
+  } catch { /* ignore */ }
+  return null;
+}
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
@@ -31,41 +48,55 @@ export default async function handler(req, res) {
     return;
   }
 
-  try {
-    const today = new Date().toLocaleDateString("en-US", {
-      year: "numeric",
-      month: "long",
-      day: "numeric",
-    });
-    const datedSystem =
-      "Today's date is " +
-      today +
-      ". Treat every request as historical research about events that have already happened. " +
-      "Never refuse a year, flight, or event on the grounds that it is in the future or has not occurred yet — " +
-      "the current year and recent years are in the past. If you have knowledge of matching accidents, report them. " +
-      "If you genuinely have no reliable information about the request, say so plainly instead.\n\n" +
-      system;
+  const today = new Date().toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+  const datedSystem =
+    "Today's date is " +
+    today +
+    ". Treat every request as historical research about events that have already happened. " +
+    "Never refuse a year, flight, or event on the grounds that it is in the future or has not occurred yet — " +
+    "the current year and recent years are in the past. If you have knowledge of matching accidents, report them. " +
+    "If you genuinely have no reliable information about the request, say so plainly instead.\n\n" +
+    system;
 
-    const r = await fetch(
-      "https://generativelanguage.googleapis.com/v1beta/models/" + MODEL + ":generateContent",
-      {
+  const payload = JSON.stringify({
+    system_instruction: { parts: [{ text: datedSystem }] },
+    contents: [{ role: "user", parts: [{ text: prompt }] }],
+    generationConfig: {
+      maxOutputTokens: 2048,
+      temperature: 0.4,
+      responseMimeType: "application/json", // ask Gemini for clean JSON
+    },
+  });
+  const url =
+    "https://generativelanguage.googleapis.com/v1beta/models/" + MODEL + ":generateContent";
+
+  try {
+    let r, rawBody, data;
+    // Up to 2 attempts: if we hit a short rate-limit blip, wait and retry once.
+    for (let attempt = 0; attempt < 2; attempt++) {
+      r = await fetch(url, {
         method: "POST",
         headers: { "content-type": "application/json", "x-goog-api-key": apiKey },
-        body: JSON.stringify({
-          system_instruction: { parts: [{ text: datedSystem }] },
-          contents: [{ role: "user", parts: [{ text: prompt }] }],
-          generationConfig: {
-            maxOutputTokens: 2048,
-            temperature: 0.4,
-            responseMimeType: "application/json", // ask Gemini for clean JSON
-          },
-        }),
-      }
-    );
+        body: payload,
+      });
+      rawBody = await r.text();
+      data = null;
+      try { data = JSON.parse(rawBody); } catch { /* non-JSON */ }
 
-    const rawBody = await r.text();
-    let data = null;
-    try { data = JSON.parse(rawBody); } catch { /* non-JSON error body */ }
+      if (r.status !== 429) break;
+
+      // Rate limited. Retry once only if the suggested wait is short.
+      const wait = retrySeconds(data);
+      if (attempt === 0 && wait != null && wait <= 6) {
+        await sleep(wait * 1000 + 300);
+        continue;
+      }
+      break;
+    }
 
     if (!r.ok) {
       const detail =
@@ -74,8 +105,12 @@ export default async function handler(req, res) {
         ("HTTP " + r.status);
       let friendly;
       if (r.status === 429) {
+        const wait = retrySeconds(data);
         friendly =
-          "Busy: the free Gemini tier limits requests per minute/day, and it's maxed out right now. Wait a bit and try again.";
+          "Busy: the free Gemini tier limits how many requests you can make per minute/day. " +
+          (wait != null
+            ? "Try again in about " + wait + " seconds."
+            : "Wait up to a minute and try again.");
       } else {
         friendly = "Gemini error (" + r.status + "): " + detail;
       }
