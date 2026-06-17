@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>BLACKBOX — Aviation Accident Archive</title>
+<meta name="description" content="Enter a flight number to recover the full story of an aviation accident — what happened, what caused it, and what the investigation found." />
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;450;500;600&display=swap');
+
+*{box-sizing:border-box;}
+html,body{margin:0;padding:0;}
+.bb-root{
+  --bg:#0C0F13; --panel:#13181F; --panel2:#1A212B; --line:#28313D;
+  --ink:#ECEAE3; --muted:#8A95A2; --amber:#F2952C; --amberglow:rgba(242,149,44,.14);
+  --alert:#E5564C; --good:#54C2A6;
+  --mono:'IBM Plex Mono',monospace; --display:'Space Grotesk',sans-serif; --body:'Inter',sans-serif;
+  background:var(--bg); color:var(--ink); font-family:var(--body);
+  min-height:100vh; padding:32px 20px 60px;
+  -webkit-font-smoothing:antialiased;
+}
+.bb-wrap{max-width:840px;margin:0 auto;}
+
+.bb-hero{position:relative;border:1px solid var(--line);border-radius:14px;overflow:hidden;
+  background:radial-gradient(120% 140% at 85% -10%,var(--amberglow),transparent 55%),var(--panel);
+  padding:34px 30px 30px;}
+.bb-hero::after{content:"";position:absolute;inset:0;pointer-events:none;
+  background-image:linear-gradient(var(--line) 1px,transparent 1px),linear-gradient(90deg,var(--line) 1px,transparent 1px);
+  background-size:34px 34px;opacity:.08;}
+.bb-mark{display:flex;align-items:center;gap:11px;font-family:var(--mono);font-weight:600;
+  letter-spacing:.32em;font-size:13px;color:var(--ink);position:relative;z-index:1;}
+.bb-dot{width:9px;height:9px;border-radius:50%;background:var(--amber);
+  box-shadow:0 0 0 4px var(--amberglow);animation:bb-pulse 2.4s ease-in-out infinite;}
+@keyframes bb-pulse{0%,100%{opacity:1}50%{opacity:.35}}
+.bb-title{font-family:var(--display);font-weight:700;font-size:34px;line-height:1.05;
+  margin:18px 0 8px;position:relative;z-index:1;letter-spacing:-.01em;}
+.bb-title em{color:var(--amber);font-style:normal;}
+.bb-sub{color:var(--muted);font-size:14.5px;max-width:540px;position:relative;z-index:1;line-height:1.55;}
+
+.bb-tabs{display:flex;gap:6px;margin:22px 0 16px;}
+.bb-tab{font-family:var(--mono);font-size:12px;letter-spacing:.14em;text-transform:uppercase;
+  padding:10px 16px;border-radius:9px;border:1px solid var(--line);background:transparent;
+  color:var(--muted);cursor:pointer;transition:.18s;}
+.bb-tab:hover{color:var(--ink);border-color:#374252;}
+.bb-tab.on{background:var(--panel2);color:var(--ink);border-color:#3a4757;}
+
+.bb-field{display:flex;gap:10px;flex-wrap:wrap;}
+.bb-input{flex:1;min-width:200px;background:var(--panel);border:1px solid var(--line);
+  border-radius:10px;padding:15px 16px;color:var(--ink);font-family:var(--mono);
+  font-size:15px;letter-spacing:.05em;outline:none;transition:.18s;}
+.bb-input::placeholder{color:#5b6573;letter-spacing:.04em;}
+.bb-input:focus{border-color:var(--amber);box-shadow:0 0 0 3px var(--amberglow);}
+.bb-btn{background:var(--amber);color:#1a1206;border:none;border-radius:10px;
+  padding:0 24px;font-family:var(--display);font-weight:600;font-size:14.5px;cursor:pointer;
+  transition:.16s;white-space:nowrap;min-height:50px;}
+.bb-btn:hover{filter:brightness(1.08);}
+.bb-btn:disabled{opacity:.5;cursor:wait;}
+
+.bb-pills{display:flex;gap:7px;margin-bottom:11px;flex-wrap:wrap;}
+.bb-pill{font-family:var(--mono);font-size:11.5px;letter-spacing:.1em;text-transform:uppercase;
+  padding:8px 14px;border-radius:20px;border:1px solid var(--line);background:transparent;
+  color:var(--muted);cursor:pointer;transition:.16s;}
+.bb-pill:hover{color:var(--ink);}
+.bb-pill.on{border-color:var(--amber);color:var(--amber);background:var(--amberglow);}
+
+.bb-load{margin-top:24px;border:1px solid var(--line);border-radius:12px;background:var(--panel);
+  padding:26px;font-family:var(--mono);font-size:13px;color:var(--muted);}
+.bb-load .ln{display:flex;align-items:center;gap:10px;padding:5px 0;opacity:0;animation:bb-fade .4s forwards;}
+.bb-load .ln span{width:6px;height:6px;border-radius:50%;background:var(--amber);}
+@keyframes bb-fade{to{opacity:1}}
+.bb-bar{height:2px;background:var(--line);border-radius:2px;overflow:hidden;margin-top:14px;}
+.bb-bar i{display:block;height:100%;width:40%;background:var(--amber);animation:bb-scan 1.3s ease-in-out infinite;}
+@keyframes bb-scan{0%{margin-left:-40%}100%{margin-left:100%}}
+
+.bb-note{margin-top:24px;border:1px solid var(--line);border-left:3px solid var(--alert);
+  border-radius:10px;background:var(--panel);padding:20px 22px;}
+.bb-note.amber{border-left-color:var(--amber);}
+.bb-note h4{margin:0 0 7px;font-family:var(--mono);font-size:12px;letter-spacing:.16em;
+  text-transform:uppercase;color:var(--muted);}
+.bb-note p{margin:0;color:var(--ink);font-size:14.5px;line-height:1.6;}
+
+.bb-report{margin-top:24px;border:1px solid var(--line);border-radius:14px;background:var(--panel);overflow:hidden;}
+.bb-rhead{padding:24px 26px 20px;border-bottom:1px solid var(--line);
+  background:linear-gradient(180deg,var(--panel2),var(--panel));}
+.bb-flno{font-family:var(--mono);font-weight:600;font-size:30px;letter-spacing:.06em;color:var(--ink);}
+.bb-tag{display:inline-block;font-family:var(--mono);font-size:11px;letter-spacing:.14em;
+  text-transform:uppercase;padding:5px 11px;border-radius:6px;background:rgba(229,86,76,.13);
+  color:var(--alert);border:1px solid rgba(229,86,76,.3);margin-top:8px;}
+.bb-summary{margin:14px 0 0;font-family:var(--display);font-size:17px;line-height:1.45;color:var(--ink);}
+
+.bb-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--line);
+  border-bottom:1px solid var(--line);}
+.bb-cell{background:var(--panel);padding:15px 18px;}
+.bb-cell .k{font-family:var(--mono);font-size:10.5px;letter-spacing:.13em;text-transform:uppercase;color:var(--muted);}
+.bb-cell .v{font-size:14px;margin-top:5px;color:var(--ink);line-height:1.4;}
+
+.bb-body{padding:24px 26px 26px;}
+.bb-sec{margin-top:24px;}
+.bb-sec:first-child{margin-top:0;}
+.bb-sec h3{font-family:var(--mono);font-size:12px;letter-spacing:.16em;text-transform:uppercase;
+  color:var(--amber);margin:0 0 11px;display:flex;align-items:center;gap:10px;}
+.bb-sec h3::after{content:"";flex:1;height:1px;background:var(--line);}
+.bb-sec p{margin:0 0 12px;font-size:15px;line-height:1.68;color:#d6d8d2;}
+.bb-sec p:last-child{margin-bottom:0;}
+
+.bb-time{list-style:none;margin:0;padding:0;}
+.bb-time li{display:flex;gap:15px;padding:11px 0;border-bottom:1px dashed var(--line);}
+.bb-time li:last-child{border-bottom:none;}
+.bb-time .n{font-family:var(--mono);font-size:12px;color:var(--amber);font-weight:600;
+  min-width:26px;padding-top:2px;}
+.bb-time .t{font-size:14.5px;line-height:1.55;color:#d6d8d2;}
+
+.bb-list{margin-top:22px;display:flex;flex-direction:column;gap:10px;}
+.bb-card{border:1px solid var(--line);border-radius:11px;background:var(--panel);padding:17px 19px;
+  cursor:pointer;transition:.16s;}
+.bb-card:hover{border-color:#3a4757;background:var(--panel2);transform:translateY(-1px);}
+.bb-card .top{display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap;}
+.bb-card .fn{font-family:var(--mono);font-weight:600;font-size:16px;letter-spacing:.04em;color:var(--ink);}
+.bb-card .dt{font-family:var(--mono);font-size:12px;color:var(--muted);}
+.bb-card .meta{font-size:13px;color:var(--muted);margin-top:4px;}
+.bb-card .bl{font-size:14px;line-height:1.55;color:#cfd2cc;margin-top:9px;}
+.bb-card .go{font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--amber);margin-top:11px;display:inline-block;}
+
+.bb-disc{margin-top:18px;font-size:11.5px;color:#5d6673;line-height:1.6;font-family:var(--mono);
+  letter-spacing:.02em;text-align:center;}
+
+@media(max-width:560px){
+  .bb-grid{grid-template-columns:1fr 1fr;}
+  .bb-title{font-size:27px;}
+  .bb-flno{font-size:24px;}
+}
+</style>
+</head>
+<body>
+<div class="bb-root">
+  <div class="bb-wrap" id="top">
+    <div class="bb-hero">
+      <div class="bb-mark"><span class="bb-dot"></span> FLIGHT&nbsp;RECORDER</div>
+      <div class="bb-title">BLACK<em>BOX</em></div>
+      <p class="bb-sub">Enter a flight number to recover the full story of an aviation accident — what happened, what caused it, and what the investigation found. Researched live, on demand.</p>
+    </div>
+
+    <div class="bb-tabs">
+      <button class="bb-tab on" id="tabSearch">Flight number</button>
+      <button class="bb-tab" id="tabBrowse">Browse crashes</button>
+    </div>
+
+    <div id="panelSearch">
+      <div class="bb-field">
+        <input class="bb-input" id="q" placeholder="TWA800 · AF447 · MH370 · JAL123 …" />
+        <button class="bb-btn" id="searchBtn">Recover report</button>
+      </div>
+      <div id="searchOut"></div>
+    </div>
+
+    <div id="panelBrowse" style="display:none">
+      <div class="bb-pills">
+        <button class="bb-pill on" data-cat="Aircraft type">Aircraft type</button>
+        <button class="bb-pill" data-cat="Airline">Airline</button>
+        <button class="bb-pill" data-cat="Year">Year</button>
+      </div>
+      <div class="bb-field">
+        <input class="bb-input" id="bv" placeholder="e.g. Boeing 737 MAX" />
+        <button class="bb-btn" id="browseBtn">List crashes</button>
+      </div>
+      <div id="browseOut"></div>
+    </div>
+
+    <p class="bb-disc">AI-generated from live web research · always verify against official sources (NTSB, AAIB, BEA, ICAO) for serious use</p>
+  </div>
+</div>
+
+<script>
+// ── Prompts ───────────────────────────────────────────────────────────
+const REPORT_SYSTEM = `You are an aviation accident research analyst. The user gives a flight number (e.g. "TWA800", "AF447", "MH370", "JAL123"). Use web search to verify the facts and gather accurate detail.
+
+Decide whether that flight number is tied to a real, documented aviation crash or accident.
+
+If YES, return a thorough, accurate report. If multiple accidents share a number, pick the most notable one (usually the flight whose number was retired after a disaster).
+
+If the flight number is NOT tied to any known crash, is an active/safe flight, or is invalid/unclear, set "found" to false and explain plainly.
+
+Respond with ONLY one JSON object — no markdown, no fences, no commentary. Schema:
+{
+  "found": boolean,
+  "message": string,
+  "flightNumber": string,
+  "airline": string,
+  "aircraft": string,
+  "date": string,
+  "route": string,
+  "phase": string,
+  "fatalities": string,
+  "summary": string,
+  "narrative": string,
+  "sequence": [string],
+  "cause": string,
+  "investigation": string,
+  "aftermath": string
+}
+Keep prose clear and factual. Do not invent details — if unknown, say so.`;
+
+const BROWSE_SYSTEM = `You are an aviation accident research analyst. The user filters notable crashes by a category and value. Use web search to ensure accuracy.
+
+Return the most notable, well-documented accidents matching the filter (up to 10), most significant first.
+
+Respond with ONLY one JSON object — no markdown, no fences. Schema:
+{
+  "results": [
+    { "flightNumber": string, "airline": string, "aircraft": string, "date": string, "fatalities": string, "blurb": string }
+  ],
+  "note": string
+}`;
+
+const LOADERS_SEARCH = ["Locating flight in accident archives","Pulling the recorder data","Cross-referencing investigation records","Compiling the report"];
+const LOADERS_BROWSE = ["Scanning the accident database","Filtering by your criteria","Ranking by significance"];
+
+// ── Helpers ───────────────────────────────────────────────────────────
+function esc(s){return String(s==null?"":s).replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]));}
+function paras(t){return String(t||"").split(/\n+/).filter(Boolean).map(p=>"<p>"+esc(p)+"</p>").join("");}
+
+function closeTruncatedJSON(s){
+  let inStr=false,escFlag=false;const stack=[];
+  for(let i=0;i<s.length;i++){const c=s[i];
+    if(inStr){if(escFlag)escFlag=false;else if(c==="\\")escFlag=true;else if(c==='"')inStr=false;}
+    else{if(c==='"')inStr=true;else if(c==="{"||c==="[")stack.push(c);else if(c==="}"||c==="]")stack.pop();}}
+  let out=s;if(inStr)out+='"';
+  out=out.replace(/,\s*$/,"").replace(/,\s*"[^"]*"\s*:?\s*$/,"");
+  for(let i=stack.length-1;i>=0;i--)out+=stack[i]==="{"?"}":"]";
+  return out;
+}
+function extractJSON(text){
+  const t=text.replace(/```json/gi,"").replace(/```/g,"").trim();
+  const first=t.indexOf("{");if(first===-1)throw new Error("Couldn't read the report data.");
+  const last=t.lastIndexOf("}");
+  const slice=last>first?t.slice(first,last+1):t.slice(first);
+  try{return JSON.parse(slice);}catch(e){
+    try{return JSON.parse(closeTruncatedJSON(t.slice(first)));}
+    catch(e2){throw new Error("Couldn't read the report data.");}
+  }
+}
+
+async function callBackend(system,prompt){
+  const res=await fetch("/api/research",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({system,prompt})});
+  const data=await res.json().catch(()=>({}));
+  if(!res.ok)throw new Error(data.error||("Request failed ("+res.status+")."));
+  return data.text||"";
+}
+
+function loaderHTML(lines){
+  return '<div class="bb-load">'+lines.map((l,i)=>'<div class="ln" style="animation-delay:'+(i*0.5)+'s"><span></span> '+esc(l)+'…</div>').join("")+'<div class="bb-bar"><i></i></div></div>';
+}
+
+function buildReport(r){
+  const cells=[["Operator",r.airline],["Aircraft",r.aircraft],["Date",r.date],["Route",r.route],["Phase",r.phase],["Fatalities",r.fatalities]].filter(c=>c[1]);
+  const grid=cells.map(c=>'<div class="bb-cell"><div class="k">'+esc(c[0])+'</div><div class="v">'+esc(c[1])+'</div></div>').join("");
+  let secs="";
+  if(r.narrative)secs+='<div class="bb-sec"><h3>What happened</h3>'+paras(r.narrative)+'</div>';
+  if(Array.isArray(r.sequence)&&r.sequence.length){
+    const li=r.sequence.map((s,i)=>'<li><span class="n">'+String(i+1).padStart(2,"0")+'</span><span class="t">'+esc(s)+'</span></li>').join("");
+    secs+='<div class="bb-sec"><h3>Sequence of events</h3><ol class="bb-time">'+li+'</ol></div>';
+  }
+  if(r.cause)secs+='<div class="bb-sec"><h3>Probable cause</h3>'+paras(r.cause)+'</div>';
+  if(r.investigation)secs+='<div class="bb-sec"><h3>The investigation</h3>'+paras(r.investigation)+'</div>';
+  if(r.aftermath)secs+='<div class="bb-sec"><h3>Aftermath &amp; legacy</h3>'+paras(r.aftermath)+'</div>';
+  return '<div class="bb-report"><div class="bb-rhead"><div class="bb-flno">'+esc(r.flightNumber)+'</div>'+
+    '<span class="bb-tag">Accident · Hull loss</span>'+
+    (r.summary?'<p class="bb-summary">'+esc(r.summary)+'</p>':"")+
+    '</div><div class="bb-grid">'+grid+'</div><div class="bb-body">'+secs+'</div></div>';
+}
+
+function buildList(results){
+  return '<div class="bb-list">'+results.map(it=>
+    '<div class="bb-card" data-fn="'+esc(it.flightNumber)+'">'+
+      '<div class="top"><span class="fn">'+esc(it.flightNumber)+'</span><span class="dt">'+esc(it.date)+'</span></div>'+
+      '<div class="meta">'+esc(it.airline)+(it.aircraft?" · "+esc(it.aircraft):"")+(it.fatalities?" · "+esc(it.fatalities):"")+'</div>'+
+      (it.blurb?'<div class="bl">'+esc(it.blurb)+'</div>':"")+
+      '<span class="go">View full report →</span>'+
+    '</div>').join("")+'</div>';
+}
+
+// ── Elements ──────────────────────────────────────────────────────────
+const tabSearch=document.getElementById("tabSearch"),tabBrowse=document.getElementById("tabBrowse");
+const panelSearch=document.getElementById("panelSearch"),panelBrowse=document.getElementById("panelBrowse");
+const q=document.getElementById("q"),searchBtn=document.getElementById("searchBtn"),searchOut=document.getElementById("searchOut");
+const bv=document.getElementById("bv"),browseBtn=document.getElementById("browseBtn"),browseOut=document.getElementById("browseOut");
+let cat="Aircraft type";
+
+function switchTab(which){
+  const onSearch=which==="search";
+  tabSearch.classList.toggle("on",onSearch);tabBrowse.classList.toggle("on",!onSearch);
+  panelSearch.style.display=onSearch?"":"none";panelBrowse.style.display=onSearch?"none":"";
+}
+tabSearch.onclick=()=>switchTab("search");
+tabBrowse.onclick=()=>switchTab("browse");
+
+document.querySelectorAll(".bb-pill").forEach(p=>{
+  p.onclick=()=>{
+    cat=p.getAttribute("data-cat");
+    document.querySelectorAll(".bb-pill").forEach(x=>x.classList.toggle("on",x===p));
+    bv.placeholder=cat==="Year"?"e.g. 1996":cat==="Airline"?"e.g. Air France":"e.g. Boeing 737 MAX";
+    browseOut.innerHTML="";
+  };
+});
+
+async function runSearch(fn){
+  fn=(fn||q.value).trim();if(!fn)return;
+  switchTab("search");q.value=fn;
+  searchOut.innerHTML=loaderHTML(LOADERS_SEARCH);searchBtn.disabled=true;
+  try{
+    const raw=await callBackend(REPORT_SYSTEM,'Flight number: "'+fn+'". Research this and return the JSON report.');
+    const r=extractJSON(raw);
+    if(r.found)searchOut.innerHTML=buildReport(r);
+    else searchOut.innerHTML='<div class="bb-note amber"><h4>No crash on record</h4><p>'+esc(r.message||('No documented accident was found for "'+fn+'". Double-check the flight number and try again.'))+'</p></div>';
+  }catch(e){
+    searchOut.innerHTML='<div class="bb-note"><h4>Recorder error</h4><p>'+esc(e.message)+'</p></div>';
+  }finally{searchBtn.disabled=false;}
+}
+
+async function runBrowse(){
+  const v=bv.value.trim();if(!v)return;
+  browseOut.innerHTML=loaderHTML(LOADERS_BROWSE);browseBtn.disabled=true;
+  try{
+    const raw=await callBackend(BROWSE_SYSTEM,"Filter category: "+cat+'. Value: "'+v+'". Return the JSON list of notable matching accidents.');
+    const data=extractJSON(raw);const results=data.results||[];
+    if(results.length)browseOut.innerHTML=buildList(results);
+    else browseOut.innerHTML='<div class="bb-note amber"><h4>Note</h4><p>'+esc(data.note||"No notable matches found for that filter.")+'</p></div>';
+  }catch(e){
+    browseOut.innerHTML='<div class="bb-note"><h4>Database error</h4><p>'+esc(e.message)+'</p></div>';
+  }finally{browseBtn.disabled=false;}
+}
+
+searchBtn.onclick=()=>runSearch();
+q.addEventListener("keydown",e=>{if(e.key==="Enter")runSearch();});
+browseBtn.onclick=()=>runBrowse();
+bv.addEventListener("keydown",e=>{if(e.key==="Enter")runBrowse();});
+
+browseOut.addEventListener("click",e=>{
+  const card=e.target.closest(".bb-card");if(!card)return;
+  document.getElementById("top").scrollIntoView({behavior:"smooth"});
+  runSearch(card.getAttribute("data-fn"));
+});
+</script>
+</body>
+</html>

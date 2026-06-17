@@ -1,0 +1,7 @@
+{
+  "name": "blackbox-groq",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "BLACKBOX — AI-powered aviation accident archive (Groq edition)"
+}
